@@ -1,0 +1,43 @@
+SRC=nBody.GPU+OMP+MPI.cu
+
+# use intel mpiicc compilation for this code
+module load intel intel-mpi			#load module intel compiler and for MPI intel
+module load cuda-8.0				#load module cuda-8.0
+rm -f a.out							#remove a.out,(if any) from previous compilation/running
+
+#REFERENCE : #https://anhnguyen.me/2013/12/how-to-mix-mpi-and-cuda-in-a-single-program/
+nvcc -I/opt/software/intel/impi/4.0.3.008/intel64/include -L/opt/software/intel/impi/4.0.3.008/intel64/lib -lmpi -Xcompiler -fopenmp -O0 -Wno-deprecated-gpu-targets ${SRC}
+
+#$ -V -cwd             				# use current environment and run from current directory
+#$ -j yes              				# merge stdout & stderr in to same output file
+#$ -l gputype=tesla,h_rt=00:10:00	# we use this, without cputype=sandybridge since we the Tesla only available on visu2 (cputype=haswell).
+
+##### -l exclusive=true 		# we did not use this in development, as instruction stated last line, page 1, that this ONLY FOR PRODUCTION.
+
+## -pe mpi 16						# MAX 16 cores of haswell, get hangup when ran 16 mpi
+#$ -pe mpi 1							# but in our experiment, shows that 1 core is faster than 16 cores(?)
+
+export OMP_PROC_BIND=true				# restrict the threads to be moved between processors
+export OMP_DYNAMIC=false				# restrict run time system to adjust the number of threads in a parallel region.
+
+echo running on hostname $HOSTNAME for $SRC using $NSLOTS cores		# print location of the host
+
+######DEVELOPMENT EXECUTION, 5 REPEATs, ONLY GREP Body 49999
+#omp_threads=$NSLOTS
+#REPEAT=3
+#	for t in 1 2 4 8 16 32 64 128 256 512 1024; do 					#iterate through number of threads per block, max on K80 is 1024
+#		for n in `seq 1 $REPEAT`; do
+#			export OMP_NUM_THREADS=$omp_threads; mpirun -np $NSLOTS ./a.out $t | grep -E -- 'Body 49999|time' | tr -d '\n'; printf "\t(trial %d of %d)\n" $n $REPEAT  # parallelize with b block and t threadsPerBlock
+#		done
+#	done
+#echo 'Finished'        				# indicate the end of the execution
+
+######PRODUCTION EXECUTION, 1 REPEATs, ONLY GREP Body 9999999
+omp_threads=$NSLOTS
+REPEAT=1
+	for t in 1 2 4 8 16; do 					#iterate through number of threads per block, max on K80 is 1024
+		for n in `seq 1 $REPEAT`; do
+			export OMP_NUM_THREADS=$omp_threads; mpirun -np $NSLOTS ./a.out $t | grep -E -- 'Body 9999999|time' | tr -d '\n'; printf "\t(trial %d of %d)\n" $n $REPEAT  # parallelize with b block and t threadsPerBlock
+		done
+	done
+echo 'Finished'        				# indicate the end of the execution
